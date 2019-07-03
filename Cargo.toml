@@ -1,0 +1,7 @@
+[package]
+name = "simple_raymarcher"
+version = "0.1.0"
+authors = ["LokiVKlokeNaAndoke <ma.ba1@rambler.ru>"]
+edition = "2018"
+
+[dependencies]
