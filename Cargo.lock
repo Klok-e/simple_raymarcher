@@ -1651,6 +1651,7 @@ name = "simple_raymarcher"
 version = "0.1.0"
 dependencies = [
  "arr_macro 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gfx 0.18.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "ggez 0.5.0-rc.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "num 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

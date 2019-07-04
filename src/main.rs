@@ -1,4 +1,11 @@
+mod shader_fragment;
+mod shader_vertex;
+
+use shader_fragment::FRAGMENT_GLSL;
+use shader_vertex::VERTEX_GLSL;
+
 use arr_macro::arr;
+use gfx::*;
 use ggez::conf;
 use ggez::event::{self, EventHandler};
 use ggez::graphics;
@@ -7,7 +14,7 @@ use ggez::timer;
 use ggez::{Context, ContextBuilder, GameResult};
 use num;
 
-fn main() {
+fn main() -> GameResult<()> {
     // Make a Context and an EventLoop.
     let (mut ctx, mut event_loop) = ContextBuilder::new("Raymarcher", "Dmitry")
         .window_setup(conf::WindowSetup {
@@ -29,10 +36,9 @@ fn main() {
             min_height: 0.0,
             max_height: 0.0,
             hidpi: false,
-            resizable: false,
+            resizable: true,
         })
-        .build()
-        .expect("Couldn't initialize context");
+        .build()?;
 
     // Create an instance of your event handler.
     // Usually, you should provide it with the Context object to
@@ -44,6 +50,7 @@ fn main() {
         Ok(_) => println!("Exited cleanly"),
         Err(e) => println!("Error occured: {}", e),
     }
+    Ok(())
 }
 
 struct MyGame {
@@ -65,6 +72,12 @@ impl MyGame {
     }
 }
 
+gfx_defines! {
+    constant Dim {
+        rate: f32 = "u_Rate",
+    }
+}
+
 impl EventHandler for MyGame {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         Ok(())
@@ -74,15 +87,24 @@ impl EventHandler for MyGame {
         graphics::clear(
             ctx,
             [
-                (timer::time_since_start(ctx).as_millis() as f32 / 1000. + 3.14 / 2.).cos() / 2.
-                    + 0.5,
+                0.,
                 (timer::time_since_start(ctx).as_millis() as f32 / 1000.).sin() / 2. + 0.5,
                 0.,
                 1.,
             ]
             .into(),
         );
+        // do shader stuff
+        let shader = graphics::Shader::from_u8(
+            ctx,
+            VERTEX_GLSL.as_bytes(),
+            FRAGMENT_GLSL.as_bytes(),
+            Dim { rate: 0.5 },
+            "Dim",
+            None,
+        )?;
 
+        // draw fps
         graphics::draw(
             ctx,
             &self.fps_text_cached[num::clamp(timer::fps(ctx).round() as usize, 0, 99)],
