@@ -10,6 +10,14 @@
             "problemMatcher": [
                 "$rustc"
             ]
+        },
+        {
+            "label": "Rust: cargo run --release",
+            "type": "shell",
+            "command": "cargo run --release",
+            "problemMatcher": [
+                "$rustc"
+            ]
         }
     ]
 }
