@@ -1,10 +1,6 @@
-mod shader_fragment;
-mod shader_vertex;
-
-use shader_fragment::FRAGMENT_GLSL;
-use shader_vertex::VERTEX_GLSL;
-
 use arr_macro::arr;
+use gfx;
+use gfx::traits::*;
 use gfx::*;
 use ggez::conf;
 use ggez::event::{self, EventHandler};
@@ -13,6 +9,9 @@ use ggez::nalgebra::Point2;
 use ggez::timer;
 use ggez::{Context, ContextBuilder, GameResult};
 use num;
+
+static FRAGMENT_GLSL: &[u8] = include_bytes!("./shader_fragment.glslf");
+static VERTEX_GLSL: &[u8] = include_bytes!("./shader_vertex.glslv");
 
 fn main() -> GameResult<()> {
     // Make a Context and an EventLoop.
@@ -55,6 +54,7 @@ fn main() -> GameResult<()> {
 
 struct MyGame {
     fps_text_cached: [graphics::Text; 99],
+    locals: Locals,
 }
 
 impl MyGame {
@@ -68,41 +68,68 @@ impl MyGame {
 
         MyGame {
             fps_text_cached: cached_fps_text,
+            locals: Locals { time: 0. },
         }
     }
 }
 
 gfx_defines! {
-    constant Dim {
-        rate: f32 = "u_Rate",
+    vertex Vertex {
+        pos: [f32; 2] = "a_Pos",
+    }
+
+    constant Locals {
+        time: f32 = "u_Time",
+        //camera_pos:[f32;3]="u_CameraPos",
+        //camera_orient:[[f32;3];3]="u_CameraOrient",
+    }
+
+     pipeline pipe {
+        vbuf: gfx::VertexBuffer<Vertex> = (),
+        locals: gfx::ConstantBuffer<Locals> = "Locals",
+        out: gfx::RenderTarget<gfx::format::Rgba8> = "Target0",
     }
 }
 
 impl EventHandler for MyGame {
-    fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
+    fn update(&mut self, _ctx: &mut Context) -> GameResult<()> {
         Ok(())
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        graphics::clear(
-            ctx,
-            [
-                0.,
-                (timer::time_since_start(ctx).as_millis() as f32 / 1000.).sin() / 2. + 0.5,
-                0.,
-                1.,
-            ]
-            .into(),
-        );
-        // do shader stuff
-        let shader = graphics::Shader::from_u8(
-            ctx,
-            VERTEX_GLSL.as_bytes(),
-            FRAGMENT_GLSL.as_bytes(),
-            Dim { rate: 0.5 },
-            "Dim",
-            None,
-        )?;
+        graphics::clear(ctx, [0., 0., 0., 1.].into());
+
+        // do custom pipeline stuff
+        let (factory, device, encoder, _depthview, colour_view) = graphics::gfx_objects(ctx);
+
+        let pso = factory.create_pipeline_simple(VERTEX_GLSL, FRAGMENT_GLSL, pipe::new())?;
+
+        let quad = &[
+            Vertex { pos: [-0.5, -0.5] },
+            Vertex { pos: [0.5, -0.5] },
+            Vertex { pos: [0.5, 0.5] },
+            Vertex { pos: [-0.5, 0.5] },
+        ];
+        let indices: &[u16] = &[0u16, 1, 2, 0, 2, 3];
+
+        let (vertex_buffer, slice) = factory.create_vertex_buffer_with_slice(quad, indices);
+        let data = pipe::Data {
+            locals: factory.create_constant_buffer(1),
+            out: gfx::memory::Typed::new(colour_view),
+            vbuf: vertex_buffer,
+        };
+        //encoder.
+
+        // ggez drawing
+        let quad = graphics::MeshBuilder::new()
+            .rectangle(
+                graphics::DrawMode::fill(),
+                graphics::Rect::new(0., 0., 80., 80.),
+                graphics::WHITE,
+            )
+            .build(ctx)?;
+
+        graphics::draw(ctx, &quad, (Point2::new(50.0, 50.0),))?;
 
         // draw fps
         graphics::draw(
