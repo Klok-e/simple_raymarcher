@@ -75,10 +75,22 @@ impl MyGame {
         let pso = factory.create_pipeline_simple(VERTEX_GLSL, FRAGMENT_GLSL, pipe::new())?;
 
         let quad = &[
-            Vertex { pos: [-0.5, -0.5] },
-            Vertex { pos: [0.5, -0.5] },
-            Vertex { pos: [0.5, 0.5] },
-            Vertex { pos: [-0.5, 0.5] },
+            Vertex {
+                pos: [-1., -1.],
+                uv: [0., 0.],
+            },
+            Vertex {
+                pos: [1., -1.],
+                uv: [1., 0.],
+            },
+            Vertex {
+                pos: [1., 1.],
+                uv: [1., 1.],
+            },
+            Vertex {
+                pos: [-1., 1.],
+                uv: [0., 1.],
+            },
         ];
         let indices: &[u16] = &[0, 1, 2, 0, 2, 3];
 
@@ -97,11 +109,17 @@ impl MyGame {
             slice: slice,
         })
     }
+
+    fn update_render_target(&mut self, ctx: &mut Context) {
+        let colour_view = graphics::screen_render_target(ctx);
+        self.data.out = gfx::memory::Typed::new(colour_view);
+    }
 }
 
 gfx_defines! {
     vertex Vertex {
         pos: [f32; 2] = "a_Pos",
+        uv: [f32;2] = "a_Uv",
     }
 
     constant Locals {
@@ -120,6 +138,10 @@ gfx_defines! {
 impl EventHandler for MyGame {
     fn update(&mut self, _ctx: &mut Context) -> GameResult<()> {
         Ok(())
+    }
+
+    fn resize_event(&mut self, ctx: &mut Context, _width: f32, _height: f32) {
+        self.update_render_target(ctx);
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
