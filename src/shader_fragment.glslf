@@ -1,12 +1,13 @@
 #version 150 core
 
-in 
+in vec2 v_Uv;
 out vec4 Target0;
 
-layout (std140) uniform Dim {
-    float u_Rate;
+uniform Locals{
+    float u_Time;
 };
 
 void main() {
-    Target0 = texture(t_Texture, v_Uv) * v_Color * u_Rate;
+    vec3 res=vec3(sin(v_Uv+u_Time)/2.+0.5,cos(v_Uv.x*v_Uv.y+u_Time)/2.+0.5);
+    Target0=vec4(res,1.0);
 }

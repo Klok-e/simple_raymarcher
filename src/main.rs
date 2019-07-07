@@ -2,6 +2,7 @@ use arr_macro::arr;
 use gfx;
 use gfx::traits::*;
 use gfx::*;
+use gfx_device_gl;
 use ggez::conf;
 use ggez::event::{self, EventHandler};
 use ggez::graphics;
@@ -42,7 +43,7 @@ fn main() -> GameResult<()> {
     // Create an instance of your event handler.
     // Usually, you should provide it with the Context object to
     // use when setting your game up.
-    let mut my_game = MyGame::new();
+    let mut my_game = MyGame::new(&mut ctx)?;
 
     // Run!
     match event::run(&mut ctx, &mut event_loop, &mut my_game) {
@@ -55,10 +56,13 @@ fn main() -> GameResult<()> {
 struct MyGame {
     fps_text_cached: [graphics::Text; 99],
     locals: Locals,
+    pso: gfx::pso::PipelineState<gfx_device_gl::Resources, pipe::Meta>,
+    data: pipe::Data<gfx_device_gl::Resources>,
+    slice: gfx::Slice<gfx_device_gl::Resources>,
 }
 
 impl MyGame {
-    fn new() -> Self {
+    fn new(ctx: &mut Context) -> GameResult<Self> {
         let mut cached_fps_text = arr![graphics::Text::default();99];
         for (i, item) in cached_fps_text.iter_mut().enumerate() {
             let font = graphics::Font::default();
@@ -66,10 +70,32 @@ impl MyGame {
             *item = text;
         }
 
-        MyGame {
+        let (factory, _device, _encoder, _depthview, colour_view) = graphics::gfx_objects(ctx);
+
+        let pso = factory.create_pipeline_simple(VERTEX_GLSL, FRAGMENT_GLSL, pipe::new())?;
+
+        let quad = &[
+            Vertex { pos: [-0.5, -0.5] },
+            Vertex { pos: [0.5, -0.5] },
+            Vertex { pos: [0.5, 0.5] },
+            Vertex { pos: [-0.5, 0.5] },
+        ];
+        let indices: &[u16] = &[0, 1, 2, 0, 2, 3];
+
+        let (vertex_buffer, slice) = factory.create_vertex_buffer_with_slice(quad, indices);
+        let data = pipe::Data {
+            locals: factory.create_constant_buffer(1),
+            out: gfx::memory::Typed::new(colour_view),
+            vbuf: vertex_buffer,
+        };
+
+        Ok(MyGame {
             fps_text_cached: cached_fps_text,
             locals: Locals { time: 0. },
-        }
+            pso: pso,
+            data: data,
+            slice: slice,
+        })
     }
 }
 
@@ -99,37 +125,13 @@ impl EventHandler for MyGame {
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, [0., 0., 0., 1.].into());
 
-        // do custom pipeline stuff
-        let (factory, device, encoder, _depthview, colour_view) = graphics::gfx_objects(ctx);
+        let time = ggez::timer::time_since_start(ctx).as_millis() as f32 / 1000.;
+        self.locals = Locals { time: time };
 
-        let pso = factory.create_pipeline_simple(VERTEX_GLSL, FRAGMENT_GLSL, pipe::new())?;
+        let encoder = graphics::encoder(ctx);
 
-        let quad = &[
-            Vertex { pos: [-0.5, -0.5] },
-            Vertex { pos: [0.5, -0.5] },
-            Vertex { pos: [0.5, 0.5] },
-            Vertex { pos: [-0.5, 0.5] },
-        ];
-        let indices: &[u16] = &[0u16, 1, 2, 0, 2, 3];
-
-        let (vertex_buffer, slice) = factory.create_vertex_buffer_with_slice(quad, indices);
-        let data = pipe::Data {
-            locals: factory.create_constant_buffer(1),
-            out: gfx::memory::Typed::new(colour_view),
-            vbuf: vertex_buffer,
-        };
-        //encoder.
-
-        // ggez drawing
-        let quad = graphics::MeshBuilder::new()
-            .rectangle(
-                graphics::DrawMode::fill(),
-                graphics::Rect::new(0., 0., 80., 80.),
-                graphics::WHITE,
-            )
-            .build(ctx)?;
-
-        graphics::draw(ctx, &quad, (Point2::new(50.0, 50.0),))?;
+        encoder.update_buffer(&self.data.locals, &[self.locals], 0)?;
+        encoder.draw(&self.slice, &self.pso, &self.data);
 
         // draw fps
         graphics::draw(

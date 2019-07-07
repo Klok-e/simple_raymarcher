@@ -3,5 +3,5 @@
 in vec2 a_Pos;
 
 void main() {
-    gl_Position = a_Pos;
+    gl_Position =vec4(a_Pos,0,1);
 }
