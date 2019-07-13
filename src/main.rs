@@ -14,6 +14,13 @@ use num;
 static FRAGMENT_GLSL: &[u8] = include_bytes!("./shader_fragment.glslf");
 static VERTEX_GLSL: &[u8] = include_bytes!("./shader_vertex.glslv");
 
+const IDENTITY_MAT: [[f32; 4]; 4] = [
+    [1., 0., 0., 0.],
+    [0., 1., 0., 0.],
+    [0., 0., 1., 0.],
+    [0., 0., 0., 1.],
+];
+
 fn main() -> GameResult<()> {
     // Make a Context and an EventLoop.
     let (mut ctx, mut event_loop) = ContextBuilder::new("Raymarcher", "Dmitry")
@@ -73,7 +80,6 @@ impl MyGame {
         let (factory, _device, _encoder, _depthview, colour_view) = graphics::gfx_objects(ctx);
 
         let pso = factory.create_pipeline_simple(VERTEX_GLSL, FRAGMENT_GLSL, pipe::new())?;
-
         let quad = &[
             Vertex {
                 pos: [-1., -1.],
@@ -93,7 +99,6 @@ impl MyGame {
             },
         ];
         let indices: &[u16] = &[0, 1, 2, 0, 2, 3];
-
         let (vertex_buffer, slice) = factory.create_vertex_buffer_with_slice(quad, indices);
         let data = pipe::Data {
             locals: factory.create_constant_buffer(1),
@@ -103,27 +108,48 @@ impl MyGame {
 
         Ok(MyGame {
             fps_text_cached: cached_fps_text,
-            locals: Locals { time: 0. },
+            locals: Locals {
+                time: [0., 0.],
+                image_size: get_screen_size(ctx),
+                camera_to_world: IDENTITY_MAT,
+            },
             pso: pso,
             data: data,
             slice: slice,
         })
     }
 
-    fn update_render_target(&mut self, ctx: &mut Context) {
+    fn update_render_target(
+        &mut self,
+        ctx: &mut Context,
+        width: f32,
+        height: f32,
+    ) -> GameResult<()> {
+        graphics::set_screen_coordinates(
+            ctx,
+            graphics::Rect {
+                x: 0.,
+                y: 0.,
+                w: width,
+                h: height,
+            },
+        )?;
         let colour_view = graphics::screen_render_target(ctx);
         self.data.out = gfx::memory::Typed::new(colour_view);
+        Ok(())
     }
 }
 
 gfx_defines! {
     vertex Vertex {
         pos: [f32; 2] = "a_Pos",
-        uv: [f32;2] = "a_Uv",
+        uv: [f32; 2] = "a_Uv",
     }
 
     constant Locals {
-        time: f32 = "u_Time",
+        time: [f32; 2] = "u_Time", // scalar type (f32) doesn't work idk why
+        image_size: [f32; 2] = "u_ImageSize",
+        camera_to_world: [[f32; 4]; 4] = "u_CameraToWorld",
         //camera_pos:[f32;3]="u_CameraPos",
         //camera_orient:[[f32;3];3]="u_CameraOrient",
     }
@@ -140,19 +166,22 @@ impl EventHandler for MyGame {
         Ok(())
     }
 
-    fn resize_event(&mut self, ctx: &mut Context, _width: f32, _height: f32) {
-        self.update_render_target(ctx);
+    fn resize_event(&mut self, ctx: &mut Context, width: f32, height: f32) {
+        self.update_render_target(ctx, width, height).unwrap();
+        self.locals.image_size = get_screen_size(ctx);
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, [0., 0., 0., 1.].into());
 
         let time = ggez::timer::time_since_start(ctx).as_millis() as f32 / 1000.;
-        self.locals = Locals { time: time };
+
+        self.locals.time = [time, 0.];
+        self.locals.camera_to_world = IDENTITY_MAT;
 
         let encoder = graphics::encoder(ctx);
 
-        encoder.update_buffer(&self.data.locals, &[self.locals], 0)?;
+        encoder.update_constant_buffer(&self.data.locals, &self.locals);
         encoder.draw(&self.slice, &self.pso, &self.data);
 
         // draw fps
@@ -167,4 +196,9 @@ impl EventHandler for MyGame {
         graphics::present(ctx)?;
         Ok(())
     }
+}
+
+fn get_screen_size(ctx: &Context) -> [f32; 2] {
+    let screen_rect = graphics::screen_coordinates(ctx);
+    [screen_rect.w, screen_rect.h]
 }
