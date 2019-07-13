@@ -1,18 +1,20 @@
+mod pipeline_def;
+use pipeline_def::{pipe, Locals, Vertex};
+
 use arr_macro::arr;
 use gfx;
-use gfx::traits::*;
-use gfx::*;
+use gfx::traits::FactoryExt;
 use gfx_device_gl;
 use ggez::conf;
 use ggez::event::{self, EventHandler};
 use ggez::graphics;
-use ggez::nalgebra::Point2;
+use ggez::nalgebra as na;
 use ggez::timer;
 use ggez::{Context, ContextBuilder, GameResult};
 use num;
 
-static FRAGMENT_GLSL: &[u8] = include_bytes!("./shader_fragment.glslf");
-static VERTEX_GLSL: &[u8] = include_bytes!("./shader_vertex.glslv");
+static FRAGMENT_GLSL: &[u8] = include_bytes!("./shader_fragment.glsl");
+static VERTEX_GLSL: &[u8] = include_bytes!("./shader_vertex.glsl");
 
 const IDENTITY_MAT: [[f32; 4]; 4] = [
     [1., 0., 0., 0.],
@@ -140,27 +142,6 @@ impl MyGame {
     }
 }
 
-gfx_defines! {
-    vertex Vertex {
-        pos: [f32; 2] = "a_Pos",
-        uv: [f32; 2] = "a_Uv",
-    }
-
-    constant Locals {
-        time: [f32; 2] = "u_Time", // scalar type (f32) doesn't work idk why
-        image_size: [f32; 2] = "u_ImageSize",
-        camera_to_world: [[f32; 4]; 4] = "u_CameraToWorld",
-        //camera_pos:[f32;3]="u_CameraPos",
-        //camera_orient:[[f32;3];3]="u_CameraOrient",
-    }
-
-     pipeline pipe {
-        vbuf: gfx::VertexBuffer<Vertex> = (),
-        locals: gfx::ConstantBuffer<Locals> = "Locals",
-        out: gfx::RenderTarget<gfx::format::Rgba8> = "Target0",
-    }
-}
-
 impl EventHandler for MyGame {
     fn update(&mut self, _ctx: &mut Context) -> GameResult<()> {
         Ok(())
@@ -190,7 +171,7 @@ impl EventHandler for MyGame {
             &self.fps_text_cached[num::clamp(timer::fps(ctx).round() as usize, 0, 99)],
             graphics::DrawParam::new()
                 .color((1., 1., 1., 1.).into())
-                .dest(Point2::new(0., 0.)),
+                .dest(na::Point2::new(0., 0.)),
         )?;
 
         graphics::present(ctx)?;
