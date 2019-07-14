@@ -1,5 +1,7 @@
+mod camera;
 mod pipeline_def;
-use pipeline_def::{pipe, Locals, Vertex};
+use camera::Camera;
+use pipeline_def::{pipe, CameraConsts, Vertex};
 
 use arr_macro::arr;
 use gfx;
@@ -8,6 +10,7 @@ use gfx_device_gl;
 use ggez::conf;
 use ggez::event::{self, EventHandler};
 use ggez::graphics;
+use ggez::input::keyboard;
 use ggez::nalgebra as na;
 use ggez::timer;
 use ggez::{Context, ContextBuilder, GameResult};
@@ -64,10 +67,14 @@ fn main() -> GameResult<()> {
 
 struct MyGame {
     fps_text_cached: [graphics::Text; 99],
-    locals: Locals,
     pso: gfx::pso::PipelineState<gfx_device_gl::Resources, pipe::Meta>,
     data: pipe::Data<gfx_device_gl::Resources>,
     slice: gfx::Slice<gfx_device_gl::Resources>,
+
+    camera_consts: CameraConsts,
+    time: f32,
+
+    camera: Camera,
 }
 
 impl MyGame {
@@ -79,45 +86,66 @@ impl MyGame {
             *item = text;
         }
 
-        let (factory, _device, _encoder, _depthview, colour_view) = graphics::gfx_objects(ctx);
+        let screen_size = get_screen_size(ctx);
 
-        let pso = factory.create_pipeline_simple(VERTEX_GLSL, FRAGMENT_GLSL, pipe::new())?;
+        let (factory, _device, _encoder, depthview, colour_view) = graphics::gfx_objects(ctx);
+
+        let pso = match factory.create_pipeline_simple(VERTEX_GLSL, FRAGMENT_GLSL, pipe::new()) {
+            Ok(v) => v,
+            Err(msg) => {
+                dbg!(msg);
+                panic!("AAAAAAAAAAAAAAAA");
+            }
+        };
         let quad = &[
             Vertex {
-                pos: [-1., -1.],
+                pos: [-1., -1., 0.],
                 uv: [0., 0.],
             },
             Vertex {
-                pos: [1., -1.],
+                pos: [1., -1., 0.],
                 uv: [1., 0.],
             },
             Vertex {
-                pos: [1., 1.],
+                pos: [1., 1., 0.],
                 uv: [1., 1.],
             },
             Vertex {
-                pos: [-1., 1.],
+                pos: [-1., 1., 0.],
                 uv: [0., 1.],
             },
         ];
         let indices: &[u16] = &[0, 1, 2, 0, 2, 3];
         let (vertex_buffer, slice) = factory.create_vertex_buffer_with_slice(quad, indices);
+        let default_camera = Camera::new(
+            [0., 0., 0.].into(),
+            [0., 0., 1.].into(),
+            [0., 1., 0.].into(),
+        );
+
+        let camera_consts = CameraConsts {
+            camera_pos: vec3_to_vec4_pad_zeros(default_camera.position()).into(),
+            camera_forward: vec3_to_vec4_pad_zeros(default_camera.forward()).into(),
+            camera_right: vec3_to_vec4_pad_zeros(default_camera.right()).into(),
+            camera_up: vec3_to_vec4_pad_zeros(default_camera.up()).into(),
+        };
+
         let data = pipe::Data {
-            locals: factory.create_constant_buffer(1),
+            camera_consts: factory.create_constant_buffer(1),
             out: gfx::memory::Typed::new(colour_view),
             vbuf: vertex_buffer,
+            time: 0.,
+            image_size: screen_size,
         };
 
         Ok(MyGame {
             fps_text_cached: cached_fps_text,
-            locals: Locals {
-                time: [0., 0.],
-                image_size: get_screen_size(ctx),
-                camera_to_world: IDENTITY_MAT,
-            },
+            camera_consts: camera_consts,
             pso: pso,
             data: data,
             slice: slice,
+            camera: default_camera,
+            time: 0.,
         })
     }
 
@@ -143,13 +171,31 @@ impl MyGame {
 }
 
 impl EventHandler for MyGame {
-    fn update(&mut self, _ctx: &mut Context) -> GameResult<()> {
+    fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
+        const SPEED: f32 = 0.05;
+        let mut translation = na::Vector3::new(0., 0., 0.);
+        if keyboard::is_key_pressed(ctx, keyboard::KeyCode::A) {
+            translation += na::Vector3::new(-1., 0., 0.);
+        }
+        if keyboard::is_key_pressed(ctx, keyboard::KeyCode::D) {
+            translation += na::Vector3::new(1., 0., 0.);
+        }
+        if keyboard::is_key_pressed(ctx, keyboard::KeyCode::W) {
+            translation += na::Vector3::new(0., 0., 1.);
+        }
+        if keyboard::is_key_pressed(ctx, keyboard::KeyCode::S) {
+            translation += na::Vector3::new(0., 0., -1.);
+        }
+        if translation.magnitude_squared() >= 1. {
+            translation.normalize_mut();
+        }
+        self.camera.translate(translation * SPEED);
         Ok(())
     }
 
     fn resize_event(&mut self, ctx: &mut Context, width: f32, height: f32) {
         self.update_render_target(ctx, width, height).unwrap();
-        self.locals.image_size = get_screen_size(ctx);
+        self.data.image_size = get_screen_size(ctx);
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
@@ -157,12 +203,18 @@ impl EventHandler for MyGame {
 
         let time = ggez::timer::time_since_start(ctx).as_millis() as f32 / 1000.;
 
-        self.locals.time = [time, 0.];
-        self.locals.camera_to_world = IDENTITY_MAT;
+        self.time = time;
+        self.camera_consts.camera_pos = vec3_to_vec4_pad_zeros(self.camera.position()).into();
+        self.camera_consts.camera_forward = vec3_to_vec4_pad_zeros(self.camera.forward()).into();
+        self.camera_consts.camera_up = vec3_to_vec4_pad_zeros(self.camera.up()).into();
+        self.camera_consts.camera_right = vec3_to_vec4_pad_zeros(self.camera.right()).into();
+        //TODO: use this camera_up = Cross(camera_right, camera_direction) (This corrects for any slop in the choice of "up".)
 
         let encoder = graphics::encoder(ctx);
 
-        encoder.update_constant_buffer(&self.data.locals, &self.locals);
+        self.data.time = self.time;
+
+        encoder.update_constant_buffer(&self.data.camera_consts, &self.camera_consts);
         encoder.draw(&self.slice, &self.pso, &self.data);
 
         // draw fps
@@ -182,4 +234,13 @@ impl EventHandler for MyGame {
 fn get_screen_size(ctx: &Context) -> [f32; 2] {
     let screen_rect = graphics::screen_coordinates(ctx);
     [screen_rect.w, screen_rect.h]
+}
+
+fn get_aspect_ratio(ctx: &Context) -> f32 {
+    let screens = get_screen_size(ctx);
+    screens[0] / screens[1]
+}
+
+fn vec3_to_vec4_pad_zeros(vec: na::Vector3<f32>) -> na::Vector4<f32> {
+    [vec.x, vec.y, vec.z, 0.].into()
 }
