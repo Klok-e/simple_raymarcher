@@ -11,6 +11,7 @@ use ggez::conf;
 use ggez::event::{self, EventHandler};
 use ggez::graphics;
 use ggez::input::keyboard;
+use ggez::input::mouse;
 use ggez::nalgebra as na;
 use ggez::timer;
 use ggez::{Context, ContextBuilder, GameResult};
@@ -45,6 +46,7 @@ fn main() -> GameResult<()> {
             resizable: true,
         })
         .build()?;
+    mouse::set_cursor_grabbed(&mut ctx, true)?;
 
     // Create an instance of your event handler.
     // Usually, you should provide it with the Context object to
@@ -136,6 +138,7 @@ impl MyGame {
             slice: slice,
             camera: default_camera,
             time: 0.,
+            prev_mouse_pos: [0., 0.].into(),
         })
     }
 
@@ -163,7 +166,8 @@ impl MyGame {
 impl EventHandler for MyGame {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         const SPEED: f32 = 0.05;
-        const ROT_SPEED: f32 = 0.05;
+        const ROT_SPEED: f32 = 0.002;
+        const ARROWS_ROT_SPEED: f32 = 5.;
 
         let mut translation = na::Vector3::new(0., 0., 0.);
         if keyboard::is_key_pressed(ctx, keyboard::KeyCode::A) {
@@ -197,17 +201,24 @@ impl EventHandler for MyGame {
         let mut rotation_y = 0.;
         let mut rotation_x = 0.;
         if keyboard::is_key_pressed(ctx, keyboard::KeyCode::Up) {
-            rotation_y += 1.;
+            rotation_y += ARROWS_ROT_SPEED;
         }
         if keyboard::is_key_pressed(ctx, keyboard::KeyCode::Down) {
-            rotation_y += -1.;
+            rotation_y += -ARROWS_ROT_SPEED;
         }
         if keyboard::is_key_pressed(ctx, keyboard::KeyCode::Left) {
-            rotation_x += 1.;
+            rotation_x += ARROWS_ROT_SPEED;
         }
         if keyboard::is_key_pressed(ctx, keyboard::KeyCode::Right) {
-            rotation_x += -1.;
+            rotation_x += -ARROWS_ROT_SPEED;
         }
+
+        let pos = mouse::position(ctx);
+        let pos = na::Vector2::from([pos.x, pos.y]);
+        let moved = pos - na::Vector2::from(get_screen_size(ctx)) / 2.;
+
+        rotation_y -= moved.y;
+        rotation_x -= moved.x;
         self.camera
             .rotate_by(rotation_x * ROT_SPEED, rotation_y * ROT_SPEED);
         Ok(())
@@ -219,6 +230,9 @@ impl EventHandler for MyGame {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
+        let screen_size = get_screen_size(ctx);
+        mouse::set_position(ctx, [screen_size[0] / 2., screen_size[1] / 2.])?;
+
         graphics::clear(ctx, [0., 0., 0., 1.].into());
 
         //dbg!(&self.camera);
