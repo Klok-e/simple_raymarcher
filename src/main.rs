@@ -166,7 +166,7 @@ impl EventHandler for MyGame {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         const SPEED: f32 = 0.05;
         const ROT_SPEED: f32 = 0.002;
-        const ARROWS_ROT_SPEED: f32 = 5.;
+        const ARROWS_ROT_SPEED: f32 = 20.;
 
         let mut translation = na::Vector3::new(0., 0., 0.);
         if keyboard::is_key_pressed(ctx, keyboard::KeyCode::A) {
