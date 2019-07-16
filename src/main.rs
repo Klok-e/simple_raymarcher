@@ -138,7 +138,6 @@ impl MyGame {
             slice: slice,
             camera: default_camera,
             time: 0.,
-            prev_mouse_pos: [0., 0.].into(),
         })
     }
 
