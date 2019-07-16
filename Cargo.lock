@@ -1635,6 +1635,7 @@ dependencies = [
  "gfx 0.18.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "gfx_device_gl 0.16.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "ggez 0.5.0-rc.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lazy_static 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "num 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

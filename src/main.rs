@@ -17,14 +17,8 @@ use ggez::{Context, ContextBuilder, GameResult};
 use num;
 
 static FRAGMENT_GLSL: &[u8] = include_bytes!("./shader_fragment.glsl");
-static VERTEX_GLSL: &[u8] = include_bytes!("./shader_vertex.glsl");
 
-const IDENTITY_MAT: [[f32; 4]; 4] = [
-    [1., 0., 0., 0.],
-    [0., 1., 0., 0.],
-    [0., 0., 1., 0.],
-    [0., 0., 0., 1.],
-];
+static VERTEX_GLSL: &[u8] = include_bytes!("./shader_vertex.glsl");
 
 fn main() -> GameResult<()> {
     // Make a Context and an EventLoop.
@@ -38,8 +32,8 @@ fn main() -> GameResult<()> {
             srgb: true,
         })
         .window_mode(conf::WindowMode {
-            width: 800.0,
-            height: 600.0,
+            width: 1200.0,
+            height: 800.0,
             maximized: false,
             fullscreen_type: conf::FullscreenType::Windowed,
             borderless: false,
@@ -88,7 +82,7 @@ impl MyGame {
 
         let screen_size = get_screen_size(ctx);
 
-        let (factory, _device, _encoder, depthview, colour_view) = graphics::gfx_objects(ctx);
+        let (factory, _device, _encoder, _depthview, colour_view) = graphics::gfx_objects(ctx);
 
         let pso = match factory.create_pipeline_simple(VERTEX_GLSL, FRAGMENT_GLSL, pipe::new()) {
             Ok(v) => v,
@@ -119,7 +113,7 @@ impl MyGame {
         let (vertex_buffer, slice) = factory.create_vertex_buffer_with_slice(quad, indices);
         let default_camera = Camera::new(
             [0., 0., 0.].into(),
-            [0., 0., 1.].into(),
+            [0., 0., -1.].into(),
             [0., 1., 0.].into(),
         );
 
@@ -173,6 +167,8 @@ impl MyGame {
 impl EventHandler for MyGame {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
         const SPEED: f32 = 0.05;
+        const ROT_SPEED: f32 = 0.05;
+
         let mut translation = na::Vector3::new(0., 0., 0.);
         if keyboard::is_key_pressed(ctx, keyboard::KeyCode::A) {
             translation += na::Vector3::new(-1., 0., 0.);
@@ -186,10 +182,38 @@ impl EventHandler for MyGame {
         if keyboard::is_key_pressed(ctx, keyboard::KeyCode::S) {
             translation += na::Vector3::new(0., 0., -1.);
         }
+        if keyboard::is_key_pressed(ctx, keyboard::KeyCode::PageUp) {
+            translation += na::Vector3::new(0., 1., 0.);
+        }
+        if keyboard::is_key_pressed(ctx, keyboard::KeyCode::PageDown) {
+            translation += na::Vector3::new(0., -1., 0.);
+        }
         if translation.magnitude_squared() >= 1. {
             translation.normalize_mut();
         }
-        self.camera.translate(translation * SPEED);
+        self.camera
+            .translate(self.camera.forward() * translation.z * SPEED);
+        self.camera
+            .translate(self.camera.up() * translation.y * SPEED);
+        self.camera
+            .translate(self.camera.right() * translation.x * SPEED);
+
+        let mut rotation_y = 0.;
+        let mut rotation_x = 0.;
+        if keyboard::is_key_pressed(ctx, keyboard::KeyCode::Up) {
+            rotation_y += 1.;
+        }
+        if keyboard::is_key_pressed(ctx, keyboard::KeyCode::Down) {
+            rotation_y += -1.;
+        }
+        if keyboard::is_key_pressed(ctx, keyboard::KeyCode::Left) {
+            rotation_x += 1.;
+        }
+        if keyboard::is_key_pressed(ctx, keyboard::KeyCode::Right) {
+            rotation_x += -1.;
+        }
+        self.camera
+            .rotate_by(rotation_x * ROT_SPEED, rotation_y * ROT_SPEED);
         Ok(())
     }
 
