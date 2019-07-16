@@ -111,17 +111,13 @@ impl MyGame {
         ];
         let indices: &[u16] = &[0, 1, 2, 0, 2, 3];
         let (vertex_buffer, slice) = factory.create_vertex_buffer_with_slice(quad, indices);
-        let default_camera = Camera::new(
-            [0., 0., 0.].into(),
-            [0., 0., -1.].into(),
-            [0., 1., 0.].into(),
-        );
+        let default_camera = Camera::default();
 
         let camera_consts = CameraConsts {
-            camera_pos: vec3_to_vec4_pad_zeros(default_camera.position()).into(),
-            camera_forward: vec3_to_vec4_pad_zeros(default_camera.forward()).into(),
-            camera_right: vec3_to_vec4_pad_zeros(default_camera.right()).into(),
-            camera_up: vec3_to_vec4_pad_zeros(default_camera.up()).into(),
+            camera_pos: vec3_to_vec4_pad_zeros(&default_camera.position()).into(),
+            camera_forward: vec3_to_vec4_pad_zeros(default_camera.forward().as_ref()).into(),
+            camera_right: vec3_to_vec4_pad_zeros(default_camera.right().as_ref()).into(),
+            camera_up: vec3_to_vec4_pad_zeros(default_camera.up().as_ref()).into(),
         };
 
         let data = pipe::Data {
@@ -192,11 +188,11 @@ impl EventHandler for MyGame {
             translation.normalize_mut();
         }
         self.camera
-            .translate(self.camera.forward() * translation.z * SPEED);
+            .translate(self.camera.forward().as_ref() * translation.z * SPEED);
         self.camera
-            .translate(self.camera.up() * translation.y * SPEED);
+            .translate(self.camera.up().as_ref() * translation.y * SPEED);
         self.camera
-            .translate(self.camera.right() * translation.x * SPEED);
+            .translate(self.camera.right().as_ref() * translation.x * SPEED);
 
         let mut rotation_y = 0.;
         let mut rotation_x = 0.;
@@ -225,14 +221,17 @@ impl EventHandler for MyGame {
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, [0., 0., 0., 1.].into());
 
+        //dbg!(&self.camera);
+
         let time = ggez::timer::time_since_start(ctx).as_millis() as f32 / 1000.;
 
         self.time = time;
-        self.camera_consts.camera_pos = vec3_to_vec4_pad_zeros(self.camera.position()).into();
-        self.camera_consts.camera_forward = vec3_to_vec4_pad_zeros(self.camera.forward()).into();
-        self.camera_consts.camera_up = vec3_to_vec4_pad_zeros(self.camera.up()).into();
-        self.camera_consts.camera_right = vec3_to_vec4_pad_zeros(self.camera.right()).into();
-        //TODO: use this camera_up = Cross(camera_right, camera_direction) (This corrects for any slop in the choice of "up".)
+        self.camera_consts.camera_pos = vec3_to_vec4_pad_zeros(&self.camera.position()).into();
+        self.camera_consts.camera_forward =
+            vec3_to_vec4_pad_zeros(self.camera.forward().as_ref()).into();
+        self.camera_consts.camera_up = vec3_to_vec4_pad_zeros(self.camera.up().as_ref()).into();
+        self.camera_consts.camera_right =
+            vec3_to_vec4_pad_zeros(self.camera.right().as_ref()).into();
 
         let encoder = graphics::encoder(ctx);
 
@@ -265,6 +264,6 @@ fn get_aspect_ratio(ctx: &Context) -> f32 {
     screens[0] / screens[1]
 }
 
-fn vec3_to_vec4_pad_zeros(vec: na::Vector3<f32>) -> na::Vector4<f32> {
+fn vec3_to_vec4_pad_zeros(vec: &na::Vector3<f32>) -> na::Vector4<f32> {
     [vec.x, vec.y, vec.z, 0.].into()
 }
