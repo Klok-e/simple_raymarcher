@@ -6,7 +6,7 @@ const float EPSILON = 0.0001;
 const float MAX_DISTANCE = 1000.;
 const vec3 SUN_DIR = normalize(vec3(0.,1.,1.));
 const float AMBIENT = 0.1;
-const int REFLECTION_COUNT = 3;
+const int REFLECTION_COUNT = 2;
 
 in vec2 v_Uv;
 out vec4 Target0;
@@ -237,13 +237,13 @@ float chessboard_color_intensity(in vec3 point)
 
 float sceneSDF(vec3 point, out ObjProps obj)
 {
-    float alotta_spheres = sphereSDF(repeat_point(point - vec3(0,1,0),vec3(2,0,2)), 0.2);
-    ObjProps sphere_props = ObjProps(vec3(0,0.5,0.),0.01);
+    float alotta_spheres = sphereSDF(repeat_point(point - vec3(0,1,0),vec3(2+cos(u_Time*0.8),0,2+sin(u_Time*1.4))), 0.2);
+    ObjProps sphere_props = ObjProps(vec3(0,0.5,0.),0.4);
 
     float plane = planeSDF(point-vec3(0,0,0), vec3(0,1,0));
     float plane_stripes_freq = 1;
     float chessboard = chessboard_color_intensity(point*plane_stripes_freq);
-    ObjProps res_obj = ObjProps(vec3(chessboard),0.9);
+    ObjProps res_obj = ObjProps(vec3(chessboard),0.05);
 
     return unionSDF(alotta_spheres, plane, sphere_props, res_obj, obj);
 }
@@ -312,12 +312,13 @@ void main()
             ObjProps prev_refl_obj = refl_obj;
             refl_dir = reflect(refl_dir,hit_normal);
             float refl_dist = dist_to_closest_point_to_surface(hit_pos+refl_dir*0.01, refl_dir, refl_obj);
+            dist+=refl_dist;
             hit_pos = hit_pos + refl_dir * refl_dist;
             hit_normal = estimate_normal(hit_pos);
             float refl_diffuse = max(dot(hit_normal, SUN_DIR), 0.0);
             potential_reflectivity *= prev_refl_obj.reflectivity;
             res_col = mix(res_col, refl_obj.color * (AMBIENT + refl_diffuse), potential_reflectivity);
-            if(refl_dist>=MAX_DISTANCE)
+            if(refl_dist>=MAX_DISTANCE || dist>=MAX_DISTANCE)
                 break;
         }
 

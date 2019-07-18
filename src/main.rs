@@ -35,15 +35,15 @@ fn main() -> GameResult<()> {
         .window_mode(conf::WindowMode {
             width: 1200.0,
             height: 800.0,
-            maximized: false,
-            fullscreen_type: conf::FullscreenType::Windowed,
+            maximized: true,
+            fullscreen_type: conf::FullscreenType::Desktop,
             borderless: false,
             min_width: 0.0,
             max_width: 0.0,
             min_height: 0.0,
             max_height: 0.0,
             hidpi: false,
-            resizable: true,
+            resizable: false,
         })
         .build()?;
     mouse::set_cursor_grabbed(&mut ctx, true)?;
@@ -71,6 +71,9 @@ struct MyGame {
     time: f32,
 
     camera: Camera,
+
+    in_focus: bool,
+    first_draw_executed: bool,
 }
 
 impl MyGame {
@@ -138,6 +141,8 @@ impl MyGame {
             slice: slice,
             camera: default_camera,
             time: 0.,
+            first_draw_executed: false,
+            in_focus: true,
         })
     }
 
@@ -212,17 +217,19 @@ impl EventHandler for MyGame {
             rotation_x += -ARROWS_ROT_SPEED;
         }
 
-        let screen_size = get_screen_size(ctx);
-        let pos = mouse::position(ctx);
-        let pos = na::Vector2::from([pos.x, pos.y]);
-        let moved = pos - na::Vector2::from(screen_size) / 2.;
-        match mouse::set_position(ctx, [screen_size[0] / 2., screen_size[1] / 2.]) {
-            Ok(o) => o,
-            Err(e) => println!("Couldn't set mouse pos: {}", e.to_string()),
-        }
+        if self.in_focus {
+            let screen_size = get_screen_size(ctx);
+            let pos = mouse::position(ctx);
+            let pos = na::Vector2::from([pos.x, pos.y]);
+            let moved = pos - na::Vector2::from(screen_size) / 2.;
+            match mouse::set_position(ctx, [screen_size[0] / 2., screen_size[1] / 2.]) {
+                Ok(o) => o,
+                Err(e) => println!("Couldn't set mouse pos: {}", e.to_string()),
+            }
 
-        rotation_y -= moved.y;
-        rotation_x -= moved.x;
+            rotation_y -= moved.y;
+            rotation_x -= moved.x;
+        }
         self.camera
             .rotate_by(rotation_x * ROT_SPEED, rotation_y * ROT_SPEED);
         Ok(())
@@ -233,7 +240,18 @@ impl EventHandler for MyGame {
         self.data.image_size = get_screen_size(ctx);
     }
 
+    fn focus_event(&mut self, _ctx: &mut Context, gained: bool) {
+        self.in_focus = gained;
+    }
+
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
+        // TODO: this
+        if !self.first_draw_executed {
+            self.data.image_size = get_screen_size(ctx);
+            self.update_render_target(ctx, self.data.image_size[0], self.data.image_size[1])
+                .unwrap();
+            //self.first_draw_executed = true;
+        }
         graphics::clear(ctx, [0., 0., 0., 1.].into());
 
         let time = ggez::timer::time_since_start(ctx).as_millis() as f32 / 1000.;
