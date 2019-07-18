@@ -164,7 +164,7 @@ impl MyGame {
 
 impl EventHandler for MyGame {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
-        const SPEED: f32 = 0.05;
+        const SPEED: f32 = 0.01;
         const ROT_SPEED: f32 = 0.002;
         const ARROWS_ROT_SPEED: f32 = 20.;
 
@@ -212,9 +212,14 @@ impl EventHandler for MyGame {
             rotation_x += -ARROWS_ROT_SPEED;
         }
 
+        let screen_size = get_screen_size(ctx);
         let pos = mouse::position(ctx);
         let pos = na::Vector2::from([pos.x, pos.y]);
-        let moved = pos - na::Vector2::from(get_screen_size(ctx)) / 2.;
+        let moved = pos - na::Vector2::from(screen_size) / 2.;
+        match mouse::set_position(ctx, [screen_size[0] / 2., screen_size[1] / 2.]) {
+            Ok(o) => o,
+            Err(e) => println!("Couldn't set mouse pos: {}", e.to_string()),
+        }
 
         rotation_y -= moved.y;
         rotation_x -= moved.x;
@@ -229,12 +234,7 @@ impl EventHandler for MyGame {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        let screen_size = get_screen_size(ctx);
-        mouse::set_position(ctx, [screen_size[0] / 2., screen_size[1] / 2.])?;
-
         graphics::clear(ctx, [0., 0., 0., 1.].into());
-
-        //dbg!(&self.camera);
 
         let time = ggez::timer::time_since_start(ctx).as_millis() as f32 / 1000.;
 

@@ -3,7 +3,10 @@
 const float PI = 3.14159265359;
 const int MARCH_STEPS = 255;
 const float EPSILON = 0.0001;
-const float MAX_DISTANCE = 10000.;
+const float MAX_DISTANCE = 1000.;
+const vec3 SUN_DIR = normalize(vec3(0.,1.,1.));
+const float AMBIENT = 0.1;
+const int REFLECTION_COUNT = 3;
 
 in vec2 v_Uv;
 out vec4 Target0;
@@ -19,87 +22,230 @@ uniform CameraConsts
 uniform float u_Time;
 uniform vec2 u_ImageSize;
 
-float intersectSDF(float distA, float distB) 
+struct ObjProps
 {
-    return max(distA, distB);
+    vec3 color;
+    float reflectivity;
+};
+
+// SKYBOX
+// Mathematical Constants
+// Planet Constants
+const float EARTHRADIUS = 6360e2; // 6360e3
+const float ATMOSPHERERADIUS = 6420e2; //6420e3
+const float SUNINTENSITY = 20.0; //20.0
+
+// Rayleigh Scattering
+const float RAYLEIGHSCALEHEIGHT = 7994.0; // 7994.0
+const vec3 BETAR = vec3(3.8e-6, 13.5e-6, 33.1e-6);
+
+// Mie Scattering
+const float MIESCALEHEIGHT = 1200.0; // 1200.0
+const vec3 BETAM = vec3(210e-5, 210e-5, 210e-5);
+const float G = 0.76;
+
+// --------------------------------------
+// ---------- Helper Functions-----------
+// --------------------------------------
+
+// Returns the first intersection of the ray with the sphere (or -1.0 if no intersection)
+// From https://gist.github.com/wwwtyro/beecc31d65d1004f5a9d
+
+float raySphereIntersect(vec3 rayOrigin, vec3 rayDirection, vec3 sphereCenter, float sphereRadius) {
+    
+    float a = dot(rayDirection, rayDirection);
+    vec3 d = rayOrigin - sphereCenter;
+    float b = 2.0 * dot(rayDirection, d);
+    float c = dot(d, d) - (sphereRadius * sphereRadius);
+    if (b*b - 4.0*a*c < 0.0) {
+        return -1.0;
+    }
+    return (-b + sqrt((b*b) - 4.0*a*c))/(2.0*a);
+    
 }
 
-float unionSDF(float distA, float distB) 
-{
-    return min(distA, distB);
+// -------------------------------
+// ------- Main Functions --------
+// -------------------------------
+
+// The rayleigh phase function
+float rayleighPhase(float mu) {
+    float phase = (3.0 / (16.0 * PI)) * (1.0 + mu * mu);
+    return phase;
 }
 
-float differenceSDF(float distA, float distB) 
-{
-    return max(distA, -distB);
+// The mie phase function
+float miePhase(float mu) {
+    float numerator = (1.0 - G * G) * (1.0 + mu * mu);
+    float denominator = (2.0 + G * G) * pow(1.0 + G * G - 2.0 * G * mu, 3.0/2.0);
+    return (3.0 / (8.0 * PI)) * numerator / denominator;
 }
 
-float sphereSDF(vec3 point, float radius)
+// Returns the expected amount of atmospheric scattering at a given height above sea level
+// Different parameters are passed in for rayleigh and mie scattering
+vec3 scatteringAtHeight(vec3 scatteringAtSea, float height, float heightScale) {
+	return scatteringAtSea * exp(-height/heightScale);
+}
+
+// Returns the height of a vector above the 'earth'
+float height(vec3 p) {
+    return (length(p) - EARTHRADIUS);
+}
+
+// Calculates the transmittance from pb to pa, given the scale height and the scattering
+// coefficients. The samples parameter controls how accurate the result is.
+// See the scratchapixel link for details on what is happening
+vec3 transmittance(vec3 pa, vec3 pb, int samples, float scaleHeight, vec3 scatCoeffs) {
+    float opticalDepth = 0.0;
+    float segmentLength = length(pb - pa)/float(samples);
+    for (int i = 0; i < samples; i++) {
+        vec3 samplePoint = mix(pa, pb, (float(i)+0.5)/float(samples));
+        float sampleHeight = height(samplePoint);
+        opticalDepth += exp(-sampleHeight / scaleHeight) * segmentLength;
+    }
+    vec3 transmittance = exp(-1.0 * scatCoeffs * opticalDepth);
+    return transmittance;
+}
+
+// This is the main function that uses the ideas of rayleigh and mie scattering
+// This function is written with understandability in mind rather than performance, and
+// redundant calls to transmittance can be removed as per the code in the scratchapixel link
+
+vec3 getSkyColor(vec3 pa, vec3 pb, vec3 sunDir) {
+	
+    // Get the angle between the ray direction and the sun
+    float mu = dot(normalize(pb - pa), sunDir);
+    
+    // Calculate the result from the phase functions
+    float phaseR = rayleighPhase(mu);
+    float phaseM = miePhase(mu);
+    
+    // Will be used to store the cumulative colors for rayleigh and mie
+    vec3 rayleighColor = vec3(0.0, 0.0, 0.0);
+    vec3 mieColor = vec3(0.0, 0.0, 0.0);
+
+    // Performs an integral approximation by checking a number of sample points and:
+    //		- Calculating the incident light on that point from the sun
+    //		- Calculating the amount of that light that gets reflected towards the origin
+    
+    int samples = 10;
+    float segmentLength = length(pb - pa) / float(samples);
+    
+    for (int i = 0; i < samples; i++) {
+        
+    	vec3 samplePoint = mix(pa, pb, (float(i)+0.5)/float(samples));
+        float sampleHeight = height(samplePoint);
+        float distanceToAtmosphere = raySphereIntersect(samplePoint, sunDir, vec3(0.0, 0.0, 0.0), ATMOSPHERERADIUS);
+    	vec3 atmosphereIntersect = samplePoint + sunDir * distanceToAtmosphere;
+        
+        // Rayleigh Calculations
+        vec3 trans1R = transmittance(pa, samplePoint, 10, RAYLEIGHSCALEHEIGHT, BETAR);
+        vec3 trans2R = transmittance(samplePoint, atmosphereIntersect, 10, RAYLEIGHSCALEHEIGHT, BETAR);
+        rayleighColor += trans1R * trans2R * scatteringAtHeight(BETAR, sampleHeight, RAYLEIGHSCALEHEIGHT) * segmentLength;
+        
+        // Mie Calculations
+        vec3 trans1M = transmittance(pa, samplePoint, 10, MIESCALEHEIGHT, BETAM);
+        vec3 trans2M = transmittance(samplePoint, atmosphereIntersect, 10, MIESCALEHEIGHT, BETAM);
+        mieColor += trans1M * trans2M * scatteringAtHeight(BETAM, sampleHeight, MIESCALEHEIGHT) * segmentLength;
+        
+    }
+    
+    rayleighColor = SUNINTENSITY * phaseR * rayleighColor;
+    mieColor = SUNINTENSITY * phaseM * mieColor;
+    
+    return rayleighColor + mieColor;
+    
+}
+
+// Get the sky color for the ray in direction 'p'
+vec3 skyColor(vec3 p, vec3 sunDir) {
+    
+    // Get the origin and direction of the ray
+	vec3 origin = vec3(0.0, EARTHRADIUS + 1.0, 0.0);
+	vec3 dir = p;
+
+	// Get the position where the ray 'leaves' the atmopshere (see the scratchapixel link for details)
+    // Note that this implementation only works when the origin is inside the atmosphere to begin with
+    float distanceToAtmosphere = raySphereIntersect(origin, dir, vec3(0.0, 0.0, 0.0), ATMOSPHERERADIUS);
+    vec3 atmosphereIntersect = origin + dir * distanceToAtmosphere;
+    
+    // Get the color of the light from the origin to the atmosphere intersect
+    vec3 col = getSkyColor(origin, atmosphereIntersect, sunDir);
+    return col;
+
+}
+// SKYBOX
+
+float intersectSDF(in float distA, in float distB, in ObjProps colA, in ObjProps colB, out ObjProps colRes) 
+{
+    if(distA>distB)
+    {
+        colRes = colA;
+        return distA;
+    }
+    else
+    {
+        colRes = colB;
+        return distB;
+    }
+}
+
+float unionSDF(in float distA, in float distB, in ObjProps colA, in ObjProps colB, out ObjProps colRes) 
+{
+    if(distA<distB)
+    {
+        colRes = colA;
+        return distA;
+    }
+    else
+    {
+        colRes = colB;
+        return distB;
+    }
+}
+
+float differenceSDF(in float distA, in float distB, in ObjProps colA, in ObjProps colB, out ObjProps colRes) 
+{
+    return intersectSDF(distA,-distB,colA,colB,colRes);
+}
+
+vec3 repeat_point(in vec3 point, in vec3 frequency)
+{
+    vec3 q = mod(point, frequency)-0.5*frequency;
+    return q;
+}
+
+float sphereSDF(in vec3 point, in float radius)
 {
     return length(point) - radius;
 }
 
-float map(in vec3 p, out vec4 resColor )
+float planeSDF(in vec3 point, in vec3 normal)
 {
-    vec3 w = p;
-    float m = dot(w,w);
-
-    vec4 trap = vec4(abs(w),m);
-	float dz = 1.0;
-    
-    
-	for( int i=0; i<4; i++ )
-    {
-#if 0
-        float m2 = m*m;
-        float m4 = m2*m2;
-		dz = 8.0*sqrt(m4*m2*m)*dz + 1.0;
-
-        float x = w.x; float x2 = x*x; float x4 = x2*x2;
-        float y = w.y; float y2 = y*y; float y4 = y2*y2;
-        float z = w.z; float z2 = z*z; float z4 = z2*z2;
-
-        float k3 = x2 + z2;
-        float k2 = inversesqrt( k3*k3*k3*k3*k3*k3*k3 );
-        float k1 = x4 + y4 + z4 - 6.0*y2*z2 - 6.0*x2*y2 + 2.0*z2*x2;
-        float k4 = x2 - y2 + z2;
-
-        w.x = p.x +  64.0*x*y*z*(x2-z2)*k4*(x4-6.0*x2*z2+z4)*k1*k2;
-        w.y = p.y + -16.0*y2*k3*k4*k4 + k1*k1;
-        w.z = p.z +  -8.0*y*k4*(x4*x4 - 28.0*x4*x2*z2 + 70.0*x4*z4 - 28.0*x2*z2*z4 + z4*z4)*k1*k2;
-#else
-        dz = 8.0*pow(sqrt(m),7.0)*dz + 1.0;
-		//dz = 8.0*pow(m,3.5)*dz + 1.0;
-        
-        float r = length(w);
-        float b = 8.0*acos( w.y/r);
-        float a = 8.0*atan( w.x, w.z );
-        w = p + pow(r,8.0) * vec3( sin(b)*sin(a), cos(b), sin(b)*cos(a) );
-#endif        
-        
-        trap = min( trap, vec4(abs(w),m) );
-
-        m = dot(w,w);
-		if( m > 256.0 )
-            break;
-    }
-
-    resColor = vec4(m,trap.yzw);
-
-    return 0.25*log(m)*sqrt(m)/dz;
+    return dot(normal, point);
 }
 
-float sceneSDF_3spheres(vec3 point)
-{   
-    float sphere1 = sphereSDF(point - vec3(-2., 0., -2.), 1.);
-    float sphere2 = sphereSDF(point - vec3(0., 0., -2.), 1.);
-    float sphere3 = sphereSDF(point - vec3(1.5 + (1.+ sin(u_Time*2.)/2.)*0.7, 0., -2.), 1.);
-    return unionSDF(unionSDF(sphere1, sphere2), sphere3);
+float chessboard_color_intensity(in vec3 point)
+{
+    //add different dimensions 
+    float chessboard = floor(point.x) + floor(point.y) + floor(point.z);
+    //divide it by 2 and get the fractional part, resulting in a value of 0 for even and 0.5 for odd numbers.
+    chessboard = fract(chessboard * 0.5);
+    //multiply it by 2 to make odd values white instead of grey
+    return chessboard * 2;
 }
 
-float sceneSDF(vec3 point, out vec4 color)
+float sceneSDF(vec3 point, out ObjProps obj)
 {
-    return map(point, color);
+    float alotta_spheres = sphereSDF(repeat_point(point - vec3(0,1,0),vec3(2,0,2)), 0.2);
+    ObjProps sphere_props = ObjProps(vec3(0,0.5,0.),0.01);
+
+    float plane = planeSDF(point-vec3(0,0,0), vec3(0,1,0));
+    float plane_stripes_freq = 1;
+    float chessboard = chessboard_color_intensity(point*plane_stripes_freq);
+    ObjProps res_obj = ObjProps(vec3(chessboard),0.9);
+
+    return unionSDF(alotta_spheres, plane, sphere_props, res_obj, obj);
 }
 
 vec3 get_ray(vec2 uv, float fov)
@@ -116,56 +262,64 @@ vec3 get_ray(vec2 uv, float fov)
 
 vec3 estimate_normal(vec3 pos)
 {
-    vec4 t;
+    ObjProps t;
     float dfdx = sceneSDF(vec3(pos.x+EPSILON,pos.y,pos.z), t)-sceneSDF(vec3(pos.x-EPSILON,pos.y,pos.z), t);
     float dfdy = sceneSDF(vec3(pos.x,pos.y+EPSILON,pos.z), t)-sceneSDF(vec3(pos.x,pos.y-EPSILON,pos.z), t);
     float dfdz = sceneSDF(vec3(pos.x,pos.y,pos.z+EPSILON), t)-sceneSDF(vec3(pos.x,pos.y,pos.z-EPSILON), t);
     return normalize(vec3(dfdx, dfdy, dfdz));
 }
 
-float dist_to_closest_point_to_surface(vec3 eye, vec3 ray, float end) 
+float dist_to_closest_point_to_surface(in vec3 eye, in vec3 ray, out ObjProps obj) 
 {
-    vec4 t;
+    ObjProps t;
     float depth = 0.;
     for (int i = 0; i < MARCH_STEPS; i++) {
         float dist = sceneSDF(eye + depth * ray, t);
         if (dist < EPSILON) {
+            obj = t;
 			return depth;
         }
         depth += dist;
-        if (depth >= end) {
-            return end;
+        if (depth >= MAX_DISTANCE) {
+            obj = ObjProps(skyColor(ray, SUN_DIR), 0.);
+            return MAX_DISTANCE;
         }
     }
-    return end;
+    obj = ObjProps(skyColor(ray, SUN_DIR),0.);
+    return MAX_DISTANCE;
 }
 
 void main() 
 {
-    //vec2 uv_scaled = vec2(v_Uv.x * u_ImageSize.x / u_ImageSize.y, v_Uv.y);
-    //vec3 hit_color = max(vec3(0.3,sin(uv_scaled.x*50.+u_Time*10.),0.6),vec3(0.3,sin(uv_scaled.y*50.),0.6));
-    const vec3 sun_dir = normalize(vec3(0.,1.,1.));
-    const float ambient = 0.1;
-
     vec3 ray = get_ray(v_Uv, radians(75.));
-    //vec3 ray = rayDirection(45.0, u_ImageSize, u_ImageSize * v_Uv);
-    vec3 hit_color = vec3(0);
 
-    float dist = dist_to_closest_point_to_surface(u_CamPos, ray, MAX_DISTANCE);
+    ObjProps hit_obj;
+    float dist = dist_to_closest_point_to_surface(u_CamPos, ray, hit_obj);
     vec3 closest_to_surf = u_CamPos + ray * dist;
-
-    if(dist > MAX_DISTANCE)
+    if(dist < MAX_DISTANCE)
     {
-        Target0 = vec4(0.);
-        return;
+        vec3 normal = estimate_normal(closest_to_surf);
+        float diffuse = max(dot(normal, SUN_DIR), 0.0);
+
+        vec3 res_col = hit_obj.color * (AMBIENT + diffuse);
+        ObjProps refl_obj = hit_obj;
+        vec3 hit_pos = closest_to_surf;
+        vec3 hit_normal = normal;
+        vec3 refl_dir = ray;
+        for (int i = 1; i <= REFLECTION_COUNT; i++) 
+        {
+            ObjProps prev_refl_obj = refl_obj;
+            refl_dir = reflect(refl_dir,hit_normal);
+            float refl_dist = dist_to_closest_point_to_surface(hit_pos+refl_dir*0.01, refl_dir, refl_obj);
+            hit_pos = hit_pos + refl_dir * refl_dist;
+            hit_normal = estimate_normal(hit_pos);
+            float refl_diffuse = max(dot(hit_normal, SUN_DIR), 0.0);
+            res_col = mix(res_col, refl_obj.color * (AMBIENT + refl_diffuse), prev_refl_obj.reflectivity);
+            if(refl_dist>=MAX_DISTANCE)
+                break;
+        }
+
+        hit_obj.color = res_col;
     }
-    vec4 obj_color;
-    sceneSDF(closest_to_surf, obj_color);
-
-    vec3 normal = estimate_normal(closest_to_surf);
-    float diffuse = max(dot(normal, sun_dir), 0.0);
-
-    hit_color = obj_color.xyz * (ambient + diffuse);
-
-    Target0=vec4(hit_color,1.0);
+    Target0=vec4(hit_obj.color,1.0);
 }
