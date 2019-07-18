@@ -301,6 +301,7 @@ void main()
         vec3 normal = estimate_normal(closest_to_surf);
         float diffuse = max(dot(normal, SUN_DIR), 0.0);
 
+        float potential_reflectivity = 1.;
         vec3 res_col = hit_obj.color * (AMBIENT + diffuse);
         ObjProps refl_obj = hit_obj;
         vec3 hit_pos = closest_to_surf;
@@ -314,7 +315,8 @@ void main()
             hit_pos = hit_pos + refl_dir * refl_dist;
             hit_normal = estimate_normal(hit_pos);
             float refl_diffuse = max(dot(hit_normal, SUN_DIR), 0.0);
-            res_col = mix(res_col, refl_obj.color * (AMBIENT + refl_diffuse), prev_refl_obj.reflectivity);
+            potential_reflectivity *= prev_refl_obj.reflectivity;
+            res_col = mix(res_col, refl_obj.color * (AMBIENT + refl_diffuse), potential_reflectivity);
             if(refl_dist>=MAX_DISTANCE)
                 break;
         }
