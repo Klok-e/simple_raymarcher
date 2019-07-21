@@ -28,7 +28,6 @@ fn main() -> GameResult<()> {
             title: "Fractal Raymarcher".to_owned(),
             samples: conf::NumSamples::Zero,
             vsync: true,
-            transparent: false,
             icon: "".to_owned(),
             srgb: true,
         })
@@ -42,7 +41,6 @@ fn main() -> GameResult<()> {
             max_width: 0.0,
             min_height: 0.0,
             max_height: 0.0,
-            hidpi: false,
             resizable: false,
         })
         .build()?;
@@ -161,7 +159,7 @@ impl MyGame {
                 h: height,
             },
         )?;
-        let colour_view = graphics::screen_render_target(ctx);
+        let (_factory, _device, _encoder, _depthview, colour_view) = graphics::gfx_objects(ctx);
         self.data.out = gfx::memory::Typed::new(colour_view);
         Ok(())
     }
@@ -264,8 +262,7 @@ impl EventHandler for MyGame {
         self.camera_consts.camera_right =
             vec3_to_vec4_pad_zeros(self.camera.right().as_ref()).into();
 
-        let encoder = graphics::encoder(ctx);
-
+        let (_factory, _device, encoder, _depthview, _colour_view) = graphics::gfx_objects(ctx);
         self.data.time = self.time;
 
         encoder.update_constant_buffer(&self.data.camera_consts, &self.camera_consts);

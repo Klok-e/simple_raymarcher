@@ -4,11 +4,14 @@ version = "0.1.0"
 authors = ["LokiVKlokeNaAndoke <ma.ba1@rambler.ru>"]
 edition = "2018"
 
+[profile.release]
+lto = true
+
 [profile.dev]
 opt-level = 1
 
 [dependencies]
-ggez = "0.5.0-rc.2"
+ggez = "0.5.1"
 arr_macro = "0.1.2"
 num = "0.2.0"
 gfx = "0.18.1"
